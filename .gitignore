@@ -6,3 +6,4 @@ bin
 include/emp-ot
 include/emp-tool
 libs/*.so
+cmake
