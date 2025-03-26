@@ -3,3 +3,6 @@
 *.a
 .DS_Store
 bin
+include/emp-ot
+include/emp-tool
+libs/*.so
