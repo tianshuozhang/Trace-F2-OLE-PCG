@@ -1,5 +1,5 @@
 #include<otdpf.h>
-#define FULLEVALDOMAIN 6
+#define FULLEVALDOMAIN 10
 #define MESSAGESIZE 4
 #define MAXRANDINDEX pow(3,FULLEVALDOMAIN)
 
@@ -15,8 +15,8 @@ void testOutputCorrectness(
        
         uint128_t res = shares[secret_index * msg_len + i];
 
-        std::cout<<static_cast<int>(i)<<"\t"<<static_cast<int>(secret_msg[i])<<"\n";
-        std::cout<<static_cast<int>(i)<<"\t"<<static_cast<int>(res)<<"\n";
+        std::cout<<static_cast<int>(secret_index * msg_len + i)<<"\t"<<static_cast<int>(secret_msg[i])<<"\n";
+        std::cout<<static_cast<int>(secret_index)<<"\t"<<static_cast<int>(res)<<"\n";
 
         if (res != secret_msg[i])
         {
@@ -84,17 +84,9 @@ size_t ternary_xor(size_t a, size_t b) {
     return result;
 }
 
-int main(int argc , char** argv){
-    
-    int party, port;
-    parse_party_and_port(argv, &party, &port);
+void test_DPF(int party, int port,const size_t size,const size_t msg_len){
     // 初始化网络
     NetIO* io = new NetIO(party == ALICE ? nullptr : "127.0.0.1", port);
-
-
-    const size_t size = FULLEVALDOMAIN; // evaluation will result in 3^size points
-    const size_t msg_len = MESSAGESIZE;
-
 
     size_t secret_index = randIndex();
 
@@ -103,8 +95,8 @@ int main(int argc , char** argv){
     for (size_t i = 0; i < msg_len; i++)
         secret_msg[i] = randMsg();
 
-    
-
+    clock_t time;
+    time = clock();
     struct PRFKeys *prf_keys = new PRFKeys ;
     if(party==ALICE) PRFKeyGen(prf_keys);
     
@@ -115,6 +107,12 @@ int main(int argc , char** argv){
     dpf.fulldomainevaluation(shares);
     std::vector<uint128_t> receive(shares.size());
     uint128_t len = shares.size()*sizeof(uint128_t);
+
+    time = clock() - time;
+    double time_taken = ((double)time) / (CLOCKS_PER_SEC / 1000.0); // ms
+
+    printf("Eval time (total) %f ms\n", time_taken);
+    printf("DONE\n\n");
     
     if(party==1){
         io->send_data(shares.data(),len);
@@ -149,8 +147,18 @@ int main(int argc , char** argv){
         io->send_data(&secret_index,sizeof(size_t));
         io->flush();
     }
-    
+}
 
+int main(int argc , char** argv){
     
+    int party, port;
+    parse_party_and_port(argv, &party, &port);
+    const size_t size = FULLEVALDOMAIN; // evaluation will result in 3^size points
+    const size_t msg_len = MESSAGESIZE;
+    
+    
+    test_DPF(party,port,size,msg_len);
+
     return 0;
 }
+

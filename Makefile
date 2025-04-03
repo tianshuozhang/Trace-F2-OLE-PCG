@@ -1,5 +1,6 @@
 PCG_TARGET = ./bin/pcg
 DPF_TARGET = ./bin/dpf
+BENCH_TARGET = ./bin/bench
 
 CC = gcc
 CXX = g++
@@ -21,6 +22,9 @@ PCG_CPP_SRC = ./src/main.cpp
 # DPF专用源文件
 DPF_CPP_SRC = ./test/main.cpp
 
+#BENCH专用源文件
+BENCH_CPP_SRC = ./test/bench.cpp
+
 # 公共对象文件
 COMMON_OBJS = $(FFT_SRC:.c=.o) \
               $(DPF_SRC:.c=.o) \
@@ -32,10 +36,17 @@ COMMON_OBJS = $(FFT_SRC:.c=.o) \
 PCG_OBJS = $(PCG_C_SRC:.c=.o) \
            $(PCG_CPP_SRC:.cpp=.o)
 
+
+# BENCH专用对象文件
+BENCH_OBJS = $(BENCH_CPP_SRC:.cpp=.o)
+
+
+
 # DPF专用对象文件
 DPF_OBJS = $(DPF_CPP_SRC:.cpp=.o)
 
-all: $(PCG_TARGET) $(DPF_TARGET)
+
+all: $(PCG_TARGET) $(DPF_TARGET) $(BENCH_TARGET)
 
 $(PCG_TARGET): $(COMMON_OBJS) $(PCG_OBJS)
 	@mkdir -p ./bin
@@ -44,6 +55,12 @@ $(PCG_TARGET): $(COMMON_OBJS) $(PCG_OBJS)
 $(DPF_TARGET): $(COMMON_OBJS) $(DPF_OBJS)
 	@mkdir -p ./bin
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(BENCH_TARGET): $(COMMON_OBJS) $(BENCH_OBJS)
+	@mkdir -p ./bin
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+
+
 
 # C编译规则
 %.o: %.c

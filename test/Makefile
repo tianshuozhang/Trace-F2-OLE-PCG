@@ -1,8 +1,7 @@
 TARGET = ./bin/pcg
 CC = gcc
 CXX = g++
-CFLAGS += -std=c99 -O3 -I ../include -I../libs/tri-dpf/include -I/usr/include/openssl/ -I ../libs/emp-ot
-CXXFLAGS += $(CFLAGS)
+CFLAGS += -std=c99 -O3 -I ../include -I../libs/tri-dpf/include -I/usr/include/openssl/
 LDFLAGS = -march=native -lcrypto -lssl -lm -maes -ffast-math
 
 # 源文件定义
