@@ -51,7 +51,7 @@ void sender_OT(NetIO* io, vector<uint8_t>& A, int c, int t, vector<vector<uint8_
             b1[offset] = makeBlock(0, r ^ gf4_multiply(a, 1));
             b0[offset + size] = makeBlock(0, r ^ gf4_multiply(a, 2));
             b1[offset + size] = makeBlock(0, r ^ gf4_multiply(a, 3));
-            cout<<(int)r<<" "<<(int)(r ^ gf4_multiply(a, 1))<<" "<<(int)(r ^ gf4_multiply(a, 2))<<" "<<(int)(r ^ gf4_multiply(a, 3))<<endl;
+           
         }
     }
 
@@ -140,8 +140,12 @@ void run_receiver(int c, int t,vector<uint8_t>&B,vector<vector<uint8_t>> &S) {
     }
 }
 
-int main() {
-    int c = 1, t = 2; // 示例参数
+int main(int argc ,char**argv) {
+    int c = 3, t = 2; // 示例参数
+    if(argc==2) c = atoi(argv[1]);
+    if(argc==3) c = atoi(argv[1]), t = atoi(argv[2]);
+
+    
     vector<uint8_t> A(c * t);
     vector<vector<uint8_t>> R(c * t, vector<uint8_t>(c * t));
     vector<uint8_t> B(c * t);

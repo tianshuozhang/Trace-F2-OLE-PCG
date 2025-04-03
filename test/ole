@@ -1,2 +1,1 @@
-#!/bin/bash
-(sleep 0.10; $1 sender ${@:2}) &  $1 receiver ${@:2}
+g++ -o bin/ole_ot ole_ot.cpp -std=c99 -O3 -I ../include -lcrypto -lpthread -march=native
