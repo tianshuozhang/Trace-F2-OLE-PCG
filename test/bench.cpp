@@ -76,6 +76,7 @@ double bench_pcg(size_t n, size_t c, size_t t,int party, int port)
     if (party==1){
         sample_a_and_a2(fft_a.data(), fft_a2.data(), poly_size, c);
         io->send_data(fft_a.data(),poly_size);
+        io->flush();
         io->send_data(fft_a2.data(),poly_size*4);
         io->flush();
     }
@@ -92,7 +93,7 @@ double bench_pcg(size_t n, size_t c, size_t t,int party, int port)
     size_t dpf_domain_bits = ceil(log_base(poly_size / (t * DPF_MSG_SIZE * 64), 3));
     printf("dpf_domain_bits = %zu \n", dpf_domain_bits);
 
-    size_t seed_size_bits = (128 * (dpf_domain_bits * 3 + 1) + DPF_MSG_SIZE * 128) * c * c * t * t;
+    size_t seed_size_bits = (128 * (dpf_domain_bits * 3 + 1)*DPF_MSG_SIZE) * c * c * t * t;
     printf("PCG seed size: %.2f MB\n", seed_size_bits / 8000000.0);
 
     size_t dpf_block_size = DPF_MSG_SIZE * ipow(3, dpf_domain_bits);
@@ -155,13 +156,13 @@ double bench_pcg(size_t n, size_t c, size_t t,int party, int port)
     const size_t packed_block_size = ceil(block_size / 64.0);
     const size_t packed_poly_size = t * packed_block_size;
 
-    std::vector<uint128_t>packed_polys(c * c * packed_poly_size);
+    std::vector<uint128_t>packed_polys(c * c * packed_poly_size,0);
 
     // Allocate memory for the output FFT
-    std::vector<uint32_t> fft_u(poly_size);
+    std::vector<uint32_t> fft_u(poly_size,0);
 
     // Allocate memory for the final inner product
-    std::vector<uint8_t> z_poly(poly_size);
+    std::vector<uint8_t> z_poly(poly_size,0);
     std::vector<uint32_t> res_poly_mat(poly_size);
 
     //************************************************************************
@@ -175,7 +176,7 @@ double bench_pcg(size_t n, size_t c, size_t t,int party, int port)
     size_t key_index;
     uint128_t *poly_block;
     size_t i, j, k, l, w;
-    int nums = 0;
+    
     for (i = 0; i < c; i++)
     {
         for (j = 0; j < c; j++)
@@ -193,28 +194,26 @@ double bench_pcg(size_t n, size_t c, size_t t,int party, int port)
                     auto dpf = dpf_party[key_index];
                     std::vector<uint128_t> shares;
                     dpf.fulldomainevaluation(shares);
-                    // std::vector<uint128_t> receive(shares.size());
-                    // uint128_t len = shares.size()*sizeof(uint128_t);
                     
-                    // if(party==1){
-                    //     io->recv_data(receive.data(),len);
-                    //     for (size_t k = 0 ; k < shares.size() ; ++k)
-                    //     {
-                    //         shares[k]=shares[k] ^ receive[k];
-                    //         if(shares[k]!=0) nums++;
-                    //     }
-                    // }
-                    // else{
-                    //     io->send_data(shares.data(),len);
-                    //     io->flush();
-                    // }
-                        
-
                     for (w = 0; w < packed_block_size; w++)
                         poly_block[w] ^= shares[w];
+
                 }
             }
         }
+    }
+    if(party==1){
+        int nums = 0;
+        std::vector<uint128_t>receive(packed_polys.size());
+        io->recv_data(receive.data(),packed_polys.size()*16);
+        for(int w = 0; w < packed_polys.size(); ++w){
+            if((packed_polys[w]^receive[w])!= 0 ) ++nums;
+        }
+        std::cout<<"非零个数：\t"<<nums<<"\n";
+    }
+    else{
+        io->send_data(packed_polys.data(),packed_polys.size()*16);
+        io->flush();
     }
     //************************************************************************
     // Step 3: Compute the transpose of the polynomials to pack them into
@@ -270,7 +269,7 @@ double bench_pcg(size_t n, size_t c, size_t t,int party, int port)
             fft_u[k] = fft_u[k] << 2;
         }
     }
-
+    
     fft_recursive_uint32(fft_u.data(), n, poly_size / 3);
     multiply_fft_32(fft_a2.data(), fft_u.data(), res_poly_mat.data(), poly_size);
 
@@ -284,6 +283,7 @@ double bench_pcg(size_t n, size_t c, size_t t,int party, int port)
             res_poly_mat[i] = res_poly_mat[i] >> 2;
         }
     }
+    
 
     time = clock() - time;
     double time_taken = ((double)time) / (CLOCKS_PER_SEC / 1000.0); // ms

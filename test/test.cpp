@@ -14,7 +14,7 @@ extern "C" {
 
 }
 #endif
-
+#include"ole_ot.h"
 #include"otdpf.h"
 
 // This test case implements Figure 1 from https://eprint.iacr.org/2024/429.pdf.
@@ -33,7 +33,7 @@ extern "C" {
 // TODO[feature]: modularize the different components of the test case and
 // design more unit tests.
 
-#define N 16 // 3^N number of OLEs generated in total
+#define N 6 // 3^N number of OLEs generated in total
 
 // The C and T parameters are computed using the SageMath script that can be
 // found in https://github.com/mbombar/estimator_folding
@@ -43,7 +43,7 @@ extern "C" {
 
 // This test evaluates the full PCG.Expand for both parties and
 // checks correctness of the resulting OLE correlation.
-void test_pcg()
+void test_pcg(int party,int port)
 {
     clock_t time;
     time = clock();
@@ -60,7 +60,20 @@ void test_pcg()
     std::vector<uint8_t> fft_a(poly_size);
     
     std::vector<uint32_t>fft_a2(poly_size);
-    sample_a_and_a2(fft_a.data(), fft_a2.data(), poly_size, c); // Each is of poly_size
+    NetIO* io = new NetIO(party == ALICE ? nullptr : "127.0.0.1", port);
+    
+    
+    if (party==1){
+        sample_a_and_a2(fft_a.data(), fft_a2.data(), poly_size, c);
+        io->send_data(fft_a.data(),poly_size);
+        io->flush();
+        io->send_data(fft_a2.data(),poly_size*4);
+        io->flush();
+    }
+    else{
+        io->recv_data(fft_a.data(),poly_size);
+        io->recv_data(fft_a2.data(),poly_size*4);
+    }
 
     //************************************************************************
     // Here, we figure out a good block size for the error vectors such that
@@ -68,14 +81,13 @@ void test_pcg()
     // We pack L=256 coefficients of F4 into each DPF output (note that larger
     // packing values are also okay, but they will do increase key size).
     //************************************************************************
-    size_t dpf_domain_bits = n;
-    if (dpf_domain_bits == 0)
-        dpf_domain_bits = 1;
+    size_t dpf_domain_bits = n-log_base(t,3);
+    
 
     printf("DPF domain bits %zu \n", dpf_domain_bits);
 
     // 4*128 ==> 256 coefficients in F4
-    size_t dpf_block_size = poly_size;
+    size_t dpf_block_size = pow(3,dpf_domain_bits);
 
     printf("dpf_block_size = %zu\n", dpf_block_size);
 
@@ -132,7 +144,13 @@ void test_pcg()
             
         }
     }
-
+    std::vector<uint8_t> share(c*c*t*t);
+    if(party==1){
+        sender_OT(io,err_poly_coeffs_A,c,t,share);
+    }
+    else{
+        receiver_OT(io,err_poly_coeffs_A,c,t,share);
+    }
     // Compute FFT of eA and eB in packed form.
     // Note that because c = 4, we can pack 4 FFTs into a uint8_t
     
@@ -214,12 +232,11 @@ void test_pcg()
             for (size_t k = 0; k < t; k++) {
                 for (size_t l = 0; l < t; l++) {
                     
-
-                    
-
+                    size_t index = i * c * t * t + j * t * t + k * t + l;
                     // Message (beta) is of size 4 blocks of 128 bits
-                    
-                    DPFParty dpf(prf_keys,dpf_domain_bits,err_poly_positions_A[i*t+k],err_poly_coeffs_A[i*t+k],party);
+                    std::vector<uint128_t>beta;
+                    beta.push_back(share[index]);
+                    DPFParty dpf(prf_keys,dpf_domain_bits,err_poly_positions_A[i*t+k],beta,party);
 
                     dpf.generate(io);
                     dpf_party.push_back(dpf);
@@ -236,9 +253,7 @@ void test_pcg()
     //************************************************************************
 
     // Allocate memory for the DPF outputs (this is reused for each evaluation)
-    uint128_t *shares_A = malloc(sizeof(uint128_t) * dpf_block_size);
-    uint128_t *shares_B = malloc(sizeof(uint128_t) * dpf_block_size);
-    uint128_t *cache = malloc(sizeof(uint128_t) * dpf_block_size);
+    
 
     // Allocate memory for the concatenated DPF outputs
     size_t packed_block_size = ceil(block_size / 64.0);
@@ -247,38 +262,34 @@ void test_pcg()
     // printf("[DEBUG]: packed_block_size = %zu\n", packed_block_size);
     // printf("[DEBUG]: packed_poly_size = %zu\n", packed_poly_size);
 
-    uint128_t *packed_polys_A = calloc(c * c * packed_poly_size, sizeof(uint128_t));
-    uint128_t *packed_polys_B = calloc(c * c * packed_poly_size, sizeof(uint128_t));
+    std::vector<uint128_t>packed_polys_A(c * c * packed_poly_size, 0);
 
     // Allocate memory for the output FFT
-    uint32_t *fft_uA = calloc(poly_size, sizeof(uint32_t));
-    uint32_t *fft_uB = calloc(poly_size, sizeof(uint32_t));
+    std::vector<uint32_t>fft_uA(poly_size, 0);
+    
 
     // Allocate memory for the final inner product
-    uint8_t *z_poly_A = calloc(poly_size, sizeof(uint8_t));
-    uint8_t *z_poly_B = calloc(poly_size, sizeof(uint8_t));
-    uint32_t *res_poly_mat_A = malloc(sizeof(uint32_t) * poly_size);
-    uint32_t *res_poly_mat_B = malloc(sizeof(uint32_t) * poly_size);
+    
+    std::vector<uint8_t> z_poly_A(poly_size,0);
+    std::vector<uint32_t>res_poly_mat_A(poly_size);
 
     for (size_t i = 0; i < c; i++) {
         for (size_t j = 0; j < c; j++) {
             const size_t poly_index = i * c + j;
             // each entry is of length packed_poly_size
             uint128_t *packed_polyA = &packed_polys_A[poly_index * packed_poly_size];
-            uint128_t *packed_polyB = &packed_polys_B[poly_index * packed_poly_size];
-
+            
             for (size_t k = 0; k < t; k++) {
                 // each entry is of length packed_block_size
                 uint128_t *poly_blockA = &packed_polyA[k * packed_block_size];
-                uint128_t *poly_blockB = &packed_polyB[k * packed_block_size];
+                
 
                 for (size_t l = 0; l < t; l++) {
                     size_t index = i * c * t * t + j * t * t + k * t + l;
-                    struct DPFKey *dpf_keyA = dpf_keys_A[index];
-                    struct DPFKey *dpf_keyB = dpf_keys_B[index];
-
-                    DPFFullDomainEval(dpf_keyA, cache, shares_A);
-                    DPFFullDomainEval(dpf_keyB, cache, shares_B);
+                    auto dpf = dpf_party[index];
+                    std::vector<uint128_t> shares_A;
+                    dpf.fulldomainevaluation(shares_A);
+                    
 
                     // Sum all the DPFs for the current block together
                     // note that there is some extra "garbage" in the last
@@ -287,7 +298,7 @@ void test_pcg()
                     // into the parallel FFT matrix.
                     for (size_t w = 0; w < packed_block_size; w++) {
                         poly_blockA[w] ^= shares_A[w];
-                        poly_blockB[w] ^= shares_B[w];
+                        
                     }
                 }
             }
@@ -301,8 +312,7 @@ void test_pcg()
             size_t err_count = 0;
             size_t poly_index = i * c + j;
             uint128_t *poly_A = &packed_polys_A[poly_index * packed_poly_size];
-            uint128_t *poly_B = &packed_polys_B[poly_index * packed_poly_size];
-
+            
             for (size_t p = 0; p < packed_poly_size; p++)
             {
                 uint128_t res = poly_A[p] ^ poly_B[p];
