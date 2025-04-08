@@ -1,4 +1,6 @@
-#include<otdpf.h>
+#include"otdpf.h"
+#include"testF4.h"
+#include"bench.h"
 #define FULLEVALDOMAIN 10
 #define MESSAGESIZE 4
 #define MAXRANDINDEX pow(3,FULLEVALDOMAIN)
@@ -150,14 +152,25 @@ void test_DPF(int party, int port,const size_t size,const size_t msg_len){
 }
 
 int main(int argc , char** argv){
-    
     int party, port;
+    size_t c = 4;
+    size_t t = 9;
+    size_t n = 6;
     parse_party_and_port(argv, &party, &port);
-    const size_t size = FULLEVALDOMAIN; // evaluation will result in 3^size points
-    const size_t msg_len = MESSAGESIZE;
-    
-    
-    test_DPF(party,port,size,msg_len);
+    for (int i = 3; i < argc; i++) {
+        if (strcmp(argv[i], "--bench") == 0) {
+            std::cout<<"party:\t"<<party<<std::endl;
+            n = 10, t = 9;
+            bench_pcg(n,c,t,party,port);
+        } 
+        else if (strcmp(argv[i], "--test") == 0) {
+            test_pcg(n,c,t,party,port);
+        } else if (strcmp(argv[i], "--test_dpf")==0) {
+            const size_t size = FULLEVALDOMAIN; // evaluation will result in 3^size points
+            const size_t msg_len = MESSAGESIZE;
+            test_DPF(party,port,size,msg_len);
+        }
+    }
 
     return 0;
 }

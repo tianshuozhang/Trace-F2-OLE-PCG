@@ -6,7 +6,6 @@ extern "C" {
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
-// #include "test.h"
 #include "prf.h"
 #include "fft.h"
 #include "utils.h"
@@ -15,9 +14,9 @@ extern "C" {
 
 }
 #endif
-
+#include"bench.h"
 #include"otdpf.h"
-
+#include"testF4.h"
 
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -25,35 +24,7 @@ extern "C" {
 // Benchmarks are less documented compared to test.c; see test.c to
 // better understand what is done here for timing purposes.
 
-#define DPF_MSG_SIZE 8
-
-// samples the a polynomials and axa polynomials
-void sample_a_and_a2(uint8_t *fft_a, uint32_t *fft_a2, size_t poly_size, size_t c) {
-    RAND_bytes((uint8_t *)fft_a, sizeof(uint8_t) * poly_size);
-
-    // make a_0 the identity polynomial (in FFT space) i.e., all 1s
-    for (size_t i = 0; i < poly_size; i++) {
-        fft_a[i] = fft_a[i] >> 2;
-        fft_a[i] = fft_a[i] << 2;
-        fft_a[i] |= 1;
-    }
-    // FOR DEBUGGING: set fft_a to the identity
-    // for (size_t i = 0; i < poly_size; i++)
-    // {
-    //     fft_a[i] = (0xaaaa >> 1);
-    // }
-
-    uint32_t prod;
-    for (size_t j = 0; j < c; j++) {
-        for (size_t k = 0; k < c; k++) {
-            for (size_t i = 0; i < poly_size; i++) {
-                prod = mult_f4((fft_a[i] >> (2 * j)) & 0b11, (fft_a[i] >> (2 * k)) & 0b11);
-                size_t slot = j * c + k;
-                fft_a2[i] |= prod << (2 * slot);
-            }
-        }
-    }
-}
+#define DPF_MSG_SIZE 1
 
 double bench_pcg(size_t n, size_t c, size_t t,int party, int port)
 {
@@ -295,16 +266,4 @@ double bench_pcg(size_t n, size_t c, size_t t,int party, int port)
    
 
     return time_taken;
-}
-
-int main(int argc , char** argv){
-    
-    int party, port;
-    parse_party_and_port(argv, &party, &port);
-    size_t c = 4;
-    size_t t = 9;
-    size_t n = 10;
-    std::cout<<"party:\t"<<party<<std::endl;
-    bench_pcg(n,c,t,party,port);
-    
 }

@@ -1,12 +1,11 @@
 PCG_TARGET = ./bin/pcg
 DPF_TARGET = ./bin/dpf
-BENCH_TARGET = ./bin/bench
 
 CC = gcc
-CXX = g++
+CXX = g++ 
 CFLAGS += -std=c99 -O3 -I./include -I./libs/fft/include -I./libs/gf64/include -I./libs/gf128/include -I./libs/tri-dpf/include -I/usr/include/openssl/ -I/usr/local/include/emp-ot/ -I/usr/local/include/emp-tool/
-CXXFLAGS += $(CFLAGS)
-LDFLAGS = -march=native -lcrypto -lssl -lm -maes -ffast-math
+CXXFLAGS += $(CFLAGS) -msse4.1 
+LDFLAGS = -march=native -lcrypto -lssl -lm -maes -ffast-math -lpthread
 
 # 公共源文件（不包含main文件）
 FFT_SRC = $(filter-out ./libs/fft/src/test.c, $(wildcard ./libs/fft/src/*.c))
@@ -15,15 +14,14 @@ GF128_SRC = $(filter-out ./libs/gf128/src/test.c, $(wildcard ./libs/gf128/src/*.
 GF64_SRC = $(filter-out ./libs/gf64/src/test.c, $(wildcard ./libs/gf64/src/*.c))
 OTDPF_CPP_SRC = ./libs/tri-dpf/src/otdpf.cpp
 
+
 # PCG专用源文件
 PCG_C_SRC = $(filter-out ./src/main.c, $(wildcard ./src/*.c))
 PCG_CPP_SRC = ./src/main.cpp
 
 # DPF专用源文件
-DPF_CPP_SRC = ./test/main.cpp
+DPF_CPP_SRC = $(wildcard ./test/*.cpp)
 
-#BENCH专用源文件
-BENCH_CPP_SRC = ./test/bench.cpp
 
 # 公共对象文件
 COMMON_OBJS = $(FFT_SRC:.c=.o) \
@@ -37,16 +35,13 @@ PCG_OBJS = $(PCG_C_SRC:.c=.o) \
            $(PCG_CPP_SRC:.cpp=.o)
 
 
-# BENCH专用对象文件
-BENCH_OBJS = $(BENCH_CPP_SRC:.cpp=.o)
-
 
 
 # DPF专用对象文件
 DPF_OBJS = $(DPF_CPP_SRC:.cpp=.o)
 
 
-all: $(PCG_TARGET) $(DPF_TARGET) $(BENCH_TARGET)
+all: $(PCG_TARGET) $(DPF_TARGET) 
 
 $(PCG_TARGET): $(COMMON_OBJS) $(PCG_OBJS)
 	@mkdir -p ./bin
@@ -56,9 +51,6 @@ $(DPF_TARGET): $(COMMON_OBJS) $(DPF_OBJS)
 	@mkdir -p ./bin
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BENCH_TARGET): $(COMMON_OBJS) $(BENCH_OBJS)
-	@mkdir -p ./bin
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
 
 
