@@ -1,9 +1,6 @@
 #include"otdpf.h"
 #include"testF4.h"
 #include"bench.h"
-#define FULLEVALDOMAIN 10
-#define MESSAGESIZE 4
-#define MAXRANDINDEX pow(3,FULLEVALDOMAIN)
 
 void testOutputCorrectness(
     uint128_t *shares,
@@ -48,7 +45,7 @@ void testOutputCorrectness(
         }
     }
 }
-size_t randIndex()
+size_t randIndex(size_t MAXRANDINDEX = 81)
 {
     uint8_t index;
     RAND_bytes((uint8_t *)&index, sizeof(uint8_t));
@@ -90,29 +87,38 @@ void test_DPF(int party, int port,const size_t size,const size_t msg_len){
     // 初始化网络
     NetIO* io = new NetIO(party == ALICE ? nullptr : "127.0.0.1", port);
 
-    size_t secret_index = randIndex();
-
+    
+    size_t MAXRANDINDEX = pow(3,size);
+    size_t secret_index = randIndex(MAXRANDINDEX);
+    
     // sample a random message of size msg_len
     std::vector<uint128_t> secret_msg(msg_len) ;
     for (size_t i = 0; i < msg_len; i++)
         secret_msg[i] = randMsg();
 
-    clock_t time;
-    time = clock();
+    
     struct PRFKeys *prf_keys = new PRFKeys ;
     if(party==ALICE) PRFKeyGen(prf_keys);
-    
+    clock_t time;
+    clock_t start = clock();
+    // sample the DPF keys
     DPFParty dpf(prf_keys,size,secret_index,secret_msg,party);
     std::cout<<static_cast<int>(secret_index)<<"\n";
     dpf.generate(io);
+    time = clock();
+    double time_taken = ((double)time-start) / (CLOCKS_PER_SEC / 1000.0); // ms
+    printf("Key generation time %f ms\n", time_taken);
+
     std::vector<uint128_t> shares;
     dpf.fulldomainevaluation(shares);
     std::vector<uint128_t> receive(shares.size());
     uint128_t len = shares.size()*sizeof(uint128_t);
+    
+    time_taken = ((double)clock()-time) / (CLOCKS_PER_SEC / 1000.0); // ms
+    printf("Full Evaluation time %f ms\n", time_taken);
 
-    time = clock() - time;
-    double time_taken = ((double)time) / (CLOCKS_PER_SEC / 1000.0); // ms
-
+    
+    time_taken = ((double)clock()-start) / (CLOCKS_PER_SEC / 1000.0); // ms
     printf("Eval time (total) %f ms\n", time_taken);
     printf("DONE\n\n");
     
@@ -156,19 +162,22 @@ int main(int argc , char** argv){
     size_t c = 4;
     size_t t = 9;
     size_t n = 6;
+    size_t msg_len = 1;
     parse_party_and_port(argv, &party, &port);
+    c = atoi(argv[3]);
+    t = atoi(argv[4]);
+    n = atoi(argv[5]);
+    msg_len = atoi(argv[6]);
     for (int i = 3; i < argc; i++) {
         if (strcmp(argv[i], "--bench") == 0) {
-            std::cout<<"party:\t"<<party<<std::endl;
-            n = 10, t = 9;
             bench_pcg(n,c,t,party,port);
         } 
         else if (strcmp(argv[i], "--test") == 0) {
             test_pcg(n,c,t,party,port);
         } else if (strcmp(argv[i], "--test_dpf")==0) {
-            const size_t size = FULLEVALDOMAIN; // evaluation will result in 3^size points
-            const size_t msg_len = MESSAGESIZE;
-            test_DPF(party,port,size,msg_len);
+            
+            
+            test_DPF(party,port,n,msg_len);
         }
     }
 

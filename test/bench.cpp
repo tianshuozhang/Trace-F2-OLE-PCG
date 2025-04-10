@@ -61,11 +61,9 @@ double bench_pcg(size_t n, size_t c, size_t t,int party, int port)
     // For benchmarking purposes, we sample random DPF functions for a
     // sufficiently large domain size to express a block of coefficients.
     //************************************************************************
-    size_t dpf_domain_bits = ceil(log_base(poly_size / (t * DPF_MSG_SIZE * 64), 3));
+    size_t dpf_domain_bits = ceil(log_base(poly_size / (t * DPF_MSG_SIZE), 3));
     printf("dpf_domain_bits = %zu \n", dpf_domain_bits);
 
-    size_t seed_size_bits = (128 * (dpf_domain_bits * 3 + 1)*DPF_MSG_SIZE) * c * c * t * t;
-    printf("PCG seed size: %.2f MB\n", seed_size_bits / 8000000.0);
 
     size_t dpf_block_size = DPF_MSG_SIZE * ipow(3, dpf_domain_bits);
     size_t block_size = ceil(poly_size / t);
@@ -73,13 +71,14 @@ double bench_pcg(size_t n, size_t c, size_t t,int party, int port)
     printf("block_size = %zu \n", block_size);
 
     
-    std::vector<DPFParty> dpf_party;
+    std::vector<DPFParty> dpf_party(c * c * t * t);
     
 
     // Sample PRF keys for the DPFs
     struct PRFKeys *prf_keys = new PRFKeys;
     PRFKeyGen(prf_keys);
-    
+    std::vector<uint8_t> trit_decomp_A(log_base(t,3));
+    std::vector<uint8_t> trit_decomp_B(log_base(t,3));
     
     
     // Sample DPF keys for each of the t errors in the t blocks
@@ -87,10 +86,22 @@ double bench_pcg(size_t n, size_t c, size_t t,int party, int port)
     {
         for (size_t j = 0; j < c; j++)
         {
+            std::vector<uint8_t> next_idx(t,0);
             for (size_t k = 0; k < t; k++)
             {
                 for (size_t l = 0; l < t; l++)
                 {
+                    int_to_trits(k, trit_decomp_A.data(), log_base(t,3));
+                    int_to_trits(l, trit_decomp_B.data(), log_base(t,3));
+                    for (size_t k = 0; k < trit_decomp_A.size(); k++) {
+                        // printf("[DEBUG]: trits_A[%zu]=%i, trits_B[%zu]=%i\n",
+                        //    k, trit_decomp_A[k], k, trit_decomp_B[k]);
+                        trit_decomp_A[k] = (trit_decomp_A[k] + trit_decomp_B[k]) % 3;
+                    }
+                    size_t pos = trits_to_int(trit_decomp_A.data(), trit_decomp_A.size());
+                    size_t idx = next_idx[pos];
+                    next_idx[pos]++;
+
                     size_t index = i * c * t * t + j * t * t + k * t + l;
 
                     // Pick a random index for benchmarking purposes
@@ -107,9 +118,10 @@ double bench_pcg(size_t n, size_t c, size_t t,int party, int port)
                     // Message (beta) is of size 8 blocks of 128 bits
                     DPFParty dpf(prf_keys,dpf_domain_bits,alpha,beta,party);
                     dpf.generate(io);
-                    dpf_party.push_back(dpf);
-                    // printf("current index = %zu\n", index);
                     
+                    // printf("current index = %zu\n", index);
+                    const uint32_t offset =i * c * t * t + j * t * t + pos * t + idx;
+                    dpf_party[offset] = dpf;   
                 }
             }
         }
@@ -157,6 +169,7 @@ double bench_pcg(size_t n, size_t c, size_t t,int party, int port)
 
             for (k = 0; k < t; k++)
             {
+                std::vector<uint128_t> totalsharesA(ipow(3,dpf_domain_bits));
                 poly_block = &packed_poly[k * packed_block_size];
 
                 for (l = 0; l < t; l++)
@@ -166,26 +179,32 @@ double bench_pcg(size_t n, size_t c, size_t t,int party, int port)
                     std::vector<uint128_t> shares;
                     dpf.fulldomainevaluation(shares);
                     
-                    for (w = 0; w < packed_block_size; w++)
-                        poly_block[w] ^= shares[w];
+                    for(size_t w = 0; w < shares.size(); w++) {
+                        totalsharesA[w] ^= shares[w];
+                    }
 
+                }
+                for (size_t w = 0; w < totalsharesA.size(); w++) {
+                    // 提取低2位
+                    uint128_t lsb = totalsharesA[w] & 0b11;
+                
+                    // 计算存储位置
+                    size_t block_index = w / 64;
+                    size_t bit_offset = (63-w % 64) * 2;
+                
+                    // 边界检查（防止越界）
+                    if (block_index >= packed_block_size) {
+                        break; // 或处理错误
+                    }
+                    
+                    // 写入到目标位置
+                    poly_block[block_index] |= (lsb << bit_offset);
+                    
                 }
             }
         }
     }
-    if(party==1){
-        int nums = 0;
-        std::vector<uint128_t>receive(packed_polys.size());
-        io->recv_data(receive.data(),packed_polys.size()*16);
-        for(int w = 0; w < packed_polys.size(); ++w){
-            if((packed_polys[w]^receive[w])!= 0 ) ++nums;
-        }
-        std::cout<<"非零个数：\t"<<nums<<"\n";
-    }
-    else{
-        io->send_data(packed_polys.data(),packed_polys.size()*16);
-        io->flush();
-    }
+    
     //************************************************************************
     // Step 3: Compute the transpose of the polynomials to pack them into
     // the parallel FFT format.

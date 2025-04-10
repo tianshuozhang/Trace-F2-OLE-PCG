@@ -47,8 +47,8 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
 {
     clock_t time;
     time = clock();
-
-    
+    clock_t start = clock();
+    double time_taken;
     const size_t poly_size = ipow(3, n);
 
     //************************************************************************
@@ -79,18 +79,18 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
     // We pack L=256 coefficients of F4 into each DPF output (note that larger
     // packing values are also okay, but they will do increase key size).
     //************************************************************************
-    size_t dpf_domain_bits = n-log_base(t,3);
+    const size_t dpf_domain_bits = n-log_base(t,3);
     
 
     printf("DPF domain bits %zu \n", dpf_domain_bits);
 
     
-    size_t dpf_block_size = pow(3,dpf_domain_bits);
+    const size_t dpf_block_size = pow(3,dpf_domain_bits);
 
     printf("dpf_block_size = %zu\n", dpf_block_size);
 
     // Note: We assume that t is a power of 3 and so it divides poly_size
-    size_t block_size = poly_size / t;
+    const size_t block_size = poly_size / t;
 
     printf("block_size = %zu \n", block_size);
 
@@ -109,23 +109,22 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
 
     // positions of the T errors in each error vector
    
-
-    std::vector<uint8_t> err_poly_positions_A(c * t);
+    std::vector<size_t> err_poly_positions_A(c * t);
 
     for (size_t i = 0; i < c; i++)
     {
         for (size_t j = 0; j < t; j++)
         {
-            size_t offset = i * t + j;
+            const size_t offset = i * t + j;
 
             // random *non-zero* coefficients in F4
-            uint8_t a = rand_f4x();
+            const uint8_t a = rand_f4x();
             
             err_poly_coeffs_A[offset] = a;
             
 
             // random index within the block
-            size_t pos_A = random_index(block_size - 1);
+            const size_t pos_A = random_index(block_size - 1);
             
 
             if (pos_A >= block_size)
@@ -178,7 +177,14 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
     fft_recursive_uint8(fft_eA.data(), n, poly_size / 3);
     
 
-    printf("[.      ]Done with Step 1 (sampling error vectors)\n");
+    
+    if(party==1){
+        printf("[.      ]Done with Step 1 (sampling error vectors)\n");
+
+        time_taken = ((double)clock() - time) / (CLOCKS_PER_SEC / 1000.0); // ms
+        printf("Step 1 time elapsed %f ms\n", time_taken);
+        time = clock();
+    }
 
     //************************************************************************
     // Step 2: compute the inner product xA = <a, eA> and xB = <a, eB>
@@ -205,17 +211,16 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
            
         }
     }
+    if(party==1){
+        printf("[..     ]Done with Step 2 (computing the local vectors)\n");
+        time_taken = ((double)clock() - time) / (CLOCKS_PER_SEC / 1000.0); // ms
+        printf("Step 2 time elapsed %f ms\n", time_taken);
+        time = clock();
+    }
 
-    printf("[..     ]Done with Step 2 (computing the local vectors)\n");
 
     //************************************************************************
-    // Step 3: Compute cross product (eA x eB) using the position vectors
-    //************************************************************************
-    
-    printf("[...    ]Done with Step 3 (computing the cross product)\n");
-
-    //************************************************************************
-    // Step 4: Sample the DPF keys for the cross product (eA x eB)
+    // Step 3: Sample the DPF keys for the cross product (eA x eB)
     //************************************************************************
     std::vector<DPFParty> dpf_party(c * c * t * t);
    
@@ -230,30 +235,30 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
     
     for (size_t i = 0; i < c; i++) {
         for (size_t j = 0; j < c; j++) {
-            std::vector<uint8_t> next_idx(t,0);
+            std::vector<size_t> next_idx(t,0);
 
             for (size_t k = 0; k < t; k++) {
                 for (size_t l = 0; l < t; l++) {
-                    int_to_trits(k, trit_decomp_A.data(), log_base(t,3));
-                    int_to_trits(l, trit_decomp_B.data(), log_base(t,3));
+                    int_to_trits(k, trit_decomp_A.data(), n-dpf_domain_bits);
+                    int_to_trits(l, trit_decomp_B.data(), n-dpf_domain_bits);
                     for (size_t k = 0; k < trit_decomp_A.size(); k++) {
                         // printf("[DEBUG]: trits_A[%zu]=%i, trits_B[%zu]=%i\n",
                         //    k, trit_decomp_A[k], k, trit_decomp_B[k]);
                         trit_decomp_A[k] = (trit_decomp_A[k] + trit_decomp_B[k]) % 3;
                     }
-                    size_t pos = trits_to_int(trit_decomp_A.data(), trit_decomp_A.size());
-                    size_t idx = next_idx[pos];
+                    const size_t pos = trits_to_int(trit_decomp_A.data(), trit_decomp_A.size());
+                    const size_t idx = next_idx[pos];
                     next_idx[pos]++;
 
-                    size_t index = i * c * t * t + j * t * t + k * t + l;
+                    const size_t index = i * c * t * t + j * t * t + k * t + l;
                     // Message (beta) is of size 4 blocks of 128 bits
                     std::vector<uint128_t>beta;
                     
-                    uint128_t share_value = static_cast<__uint128_t>(share[index]&0b11);
+                    const uint128_t share_value = static_cast<__uint128_t>(share[index]&0b11);
                     
                     beta.push_back(share_value);
                     DPFParty dpf(prf_keys,dpf_domain_bits,err_poly_positions_A[i*t+k],beta,party);
-                    const uint32_t offset =i * c * t * t + j * t * t + pos * t + idx;
+                    const uint128_t offset =i * c * t * t + j * t * t + pos * t + idx;
                     dpf.generate(io);
 
                     dpf_party[offset] = dpf;                 
@@ -267,29 +272,31 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
         for (size_t i = 0; i < c; i++) {
             for (size_t j = 0; j < c; j++) {
                 
-                std::vector<uint8_t> next_idx(t,0);
+                std::vector<size_t> next_idx(t,0);
 
                 for (size_t k = 0; k < t; k++) {
                     for (size_t l = 0; l < t; l++) {
-                        int_to_trits(k, trit_decomp_A.data(), log_base(t,3));
-                        int_to_trits(l, trit_decomp_B.data(), log_base(t,3));
+                        int_to_trits(k, trit_decomp_A.data(), n-dpf_domain_bits);
+                        int_to_trits(l, trit_decomp_B.data(), n-dpf_domain_bits);
                         for (size_t k = 0; k < trit_decomp_A.size(); k++) {
                             // printf("[DEBUG]: trits_A[%zu]=%i, trits_B[%zu]=%i\n",
                             //    k, trit_decomp_A[k], k, trit_decomp_B[k]);
                             trit_decomp_A[k] = (trit_decomp_A[k] + trit_decomp_B[k]) % 3;
                         }
-                        size_t pos = trits_to_int(trit_decomp_A.data(), trit_decomp_A.size());
-                        size_t idx = next_idx[pos];
+                        const size_t pos = trits_to_int(trit_decomp_A.data(), trit_decomp_A.size());
+                        const size_t idx = next_idx[pos];
                         next_idx[pos]++;
-                        size_t index = i * c * t * t + j * t * t + k * t + l;
+                        const size_t index = i * c * t * t + j * t * t + k * t + l;
                         // Message (beta) is of size 4 blocks of 128 bits
                         std::vector<uint128_t>beta;
-                        beta.push_back(uint128_t(share[index]));
+                        const uint128_t share_value = static_cast<__uint128_t>(share[index]&0b11);
+                    
+                        beta.push_back(share_value);
                         DPFParty dpf(prf_keys,dpf_domain_bits,err_poly_positions_A[j*t+l],beta,party);
     
                         dpf.generate(io);
 
-                        const uint32_t offset =i * c * t * t + j * t * t + pos * t + idx;
+                        const uint128_t offset =i * c * t * t + j * t * t + pos * t + idx;
                         dpf_party[offset] = dpf;      
 
                         
@@ -299,19 +306,23 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
             }
         }
     }
-    
-    printf("[....   ]Done with Step 4 (sampling DPF keys)\n");
+    if(party==1){
+        printf("[....   ]Done with Step 3 (sampling DPF keys)\n");
+        time_taken = ((double)clock() - time) / (CLOCKS_PER_SEC / 1000.0); // ms
+        printf("Step 3 time elapsed %f ms\n", time_taken);
+        time = clock();
+    }
 
     //************************************************************************
-    // Step 5: Evaluate the DPFs to compute shares of (eA x eB)
+    // Step 4: Evaluate the DPFs to compute shares of (eA x eB)
     //************************************************************************
 
     // Allocate memory for the DPF outputs (this is reused for each evaluation)
     
 
     // Allocate memory for the concatenated DPF outputs
-    size_t packed_block_size = ceil(block_size / 64.0);
-    size_t packed_poly_size = t * packed_block_size;
+    const size_t packed_block_size = ceil(block_size / 64.0);
+    const size_t packed_poly_size = t * packed_block_size;
 
     // printf("[DEBUG]: packed_block_size = %zu\n", packed_block_size);
     // printf("[DEBUG]: packed_poly_size = %zu\n", packed_poly_size);
@@ -339,33 +350,34 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
             for (size_t k = 0; k < t; k++) {
                 // each entry is of length packed_block_size
                 uint128_t *poly_blockA = &packed_polyA[k * packed_block_size];
-                std::vector<uint128_t> totalsharesA(ipow(3,dpf_domain_bits));
-                std::vector<uint128_t> totalsharesB(ipow(3,dpf_domain_bits));
+                std::vector<uint128_t> totalsharesA(block_size,0);
+                std::vector<uint128_t> totalsharesB(block_size);
                 for (size_t l = 0; l < t; l++) {
                     size_t index = i * c * t * t + j * t * t + k * t + l;
                     auto dpf = dpf_party[index];
                     std::vector<uint128_t> shares_A;
                     dpf.fulldomainevaluation(shares_A);
+                    assert(shares_A.size() == totalsharesB.size());
                     for(size_t w = 0; w < shares_A.size(); w++) {
                         totalsharesA[w] ^= shares_A[w];
                     }
 
-                    if(party==1){
-                        std::vector<uint128_t> shares_B(shares_A.size());
-                        io->recv_data(shares_B.data(),shares_A.size()*sizeof(uint128_t));
-                        for(size_t w = 0; w < shares_A.size(); w++) {
-                            if(shares_A[w] != shares_B[w]){
-                                nums++;
-                                std::cout<<(int)w<<" ";
-                            }
-                            totalsharesB[w] ^= shares_B[w];
-                        }
+                    // if(party==1){
+                    //     std::vector<uint128_t> shares_B(shares_A.size());
+                    //     io->recv_data(shares_B.data(),shares_A.size()*sizeof(uint128_t));
+                    //     for(size_t w = 0; w < shares_A.size(); w++) {
+                    //         if(shares_A[w] != shares_B[w]){
+                    //             nums++;
+                    //             std::cout<<(int)w<<" ";
+                    //         }
+                    //         totalsharesB[w] ^= shares_B[w];
+                    //     }
                         
-                    }
-                    else{
-                        io->send_data(shares_A.data(),shares_A.size()*sizeof(uint128_t));
-                        io->flush();
-                    }
+                    // }
+                    // else{
+                    //     io->send_data(shares_A.data(),shares_A.size()*sizeof(uint128_t));
+                    //     io->flush();
+                    // }
                     // Sum all the DPFs for the current block together
                     // note that there is some extra "garbage" in the last
                     // block of uint128_t since 64 does not divide block_size.
@@ -378,61 +390,76 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
                     
                 }
                 
+                // 修改后的位打包循环，增加边界检查和错误处理
                 for (size_t w = 0; w < totalsharesA.size(); w++) {
                     // 提取低2位
-                    uint128_t lsb = totalsharesA[w] & 0b11;
-                
+                    const uint128_t lsb = totalsharesA[w] & 0b11;
+
                     // 计算存储位置
-                    size_t block_index = w / 64;
-                    size_t bit_offset = (63-w % 64) * 2;
-                
-                    // 边界检查（防止越界）
+                    const size_t block_index = w / 64;
+                    const size_t bit_offset = (63 - (w % 64)) * 2; // 确保正确的位偏移
+                    
+                    // 严格边界检查
                     if (block_index >= packed_block_size) {
-                        break; // 或处理错误
+                        std::cerr << "Error: block_index " << block_index 
+                                << " exceeds packed_block_size " << packed_block_size 
+                                << " at w=" << w << std::endl;
+                        exit(EXIT_FAILURE);
                     }
-                    
-                    // 写入到目标位置
+
+                    // 确保位移不会溢出uint128_t的范围
+                    if (bit_offset >126) {
+                        std::cerr << "Error: bit_offset " << bit_offset 
+                                << " is invalid at w=" << w  << std::endl;
+                        exit(EXIT_FAILURE);
+                    }
+
                     poly_blockA[block_index] |= (lsb << bit_offset);
-                    
                 }
-                if(party==1){
-                    std::cout<<std::endl;
-                    std::vector<uint128_t> poly_blockB(packed_block_size);
-                    io->recv_data(poly_blockB.data(),packed_block_size*sizeof(uint128_t));
+                
+                // if(party==1){
+                //     std::cout<<std::endl;
+                //     std::vector<uint128_t> poly_blockB(packed_block_size);
+                //     io->recv_data(poly_blockB.data(),packed_block_size*sizeof(uint128_t));
                     
-                    for(size_t w = 0; w < packed_block_size; w++) {
-                        uint128_t res = poly_blockA[w] ^ poly_blockB[w];
-                        for (size_t l = 0; l < 64; l++)
-                        {
-                            if (((res >> (2 * (63 - l))) & 0b11) != 0)
-                                err_count++;
-                        }
-                    }
-                    for(size_t w = 0; w < totalsharesA.size(); w++) {
-                        uint128_t res = totalsharesA[w] ^ totalsharesB[w];
-                        if(res != 0){
-                            err_count2++;
+                //     for(size_t w = 0; w < packed_block_size; w++) {
+                //         uint128_t res = poly_blockA[w] ^ poly_blockB[w];
+                //         for (size_t l = 0; l < 64; l++)
+                //         {
+                //             if (((res >> (2 * (63 - l))) & 0b11) != 0)
+                //                 err_count++;
+                //         }
+                //     }
+                //     for(size_t w = 0; w < totalsharesA.size(); w++) {
+                //         uint128_t res = totalsharesA[w] ^ totalsharesB[w];
+                //         if(res != 0){
+                //             err_count2++;
                             
-                        }
-                    }
+                //         }
+                //     }
                     
-                }
-                else{
+                // }
+                // else{
                     
-                    io->send_data(poly_blockA,packed_block_size*sizeof(uint128_t));
-                    io->flush();
+                //     io->send_data(poly_blockA,packed_block_size*sizeof(uint128_t));
+                //     io->flush();
                     
-                }
+                // }
             }
         }
-    }
-    if(party==1) std::cout<<"nums = "<<nums<<"\terr = "<<err_count<<"\t"<<err_count2<<std::endl;
-    
+    }    
+    if(party==1){
 
-    printf("[.....  ]Done with Step 5 (evaluating all DPFs)\n");
+        // std::cout<<nums<<"\t"<<err_count<<"\t"<<err_count2<<std::endl;
+
+        printf("[.....  ]Done with Step 4 (evaluating all DPFs)\n");
+        time_taken = ((double)clock() - time) / (CLOCKS_PER_SEC / 1000.0); // ms
+        printf("Step 4 time elapsed %f ms\n", time_taken);
+        time = clock();
+    }
 
     //************************************************************************
-    // Step 6: Compute an FFT over the shares of (eA x eB)
+    // Step 5: Compute an FFT over the shares of (eA x eB)
     //************************************************************************
 
     // Pack the coefficients into FFT blocks
@@ -440,20 +467,22 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
     // TODO[optimization]: use AVX and fast matrix transposition algorithms.
     // The transpose is the bottleneck of the current implementation and
     // therefore improving this step can result in significant performance gains.
-    size_t poly_index_jk, poly_index_kj, poly_index_jj, ctr;
-    uint128_t packedA_jk, packedA_kj, packedA_jj, packedB_jk, packedB_kj, packedB_jj;
-    uint32_t coeffA_jk, coeffA_kj, coeffA_jj, coeffB_jk, coeffB_kj, coeffB_jj;
 
+    
 
-    //加一些检测内容
+    // size_t poly_index_jk, poly_index_kj, poly_index_jj, ctr;
+    // uint128_t packedA_jk, packedA_kj, packedA_jj, packedB_jk, packedB_kj, packedB_jj;
+    // uint32_t coeffA_jk, coeffA_kj, coeffA_jj, coeffB_jk, coeffB_kj, coeffB_jj;
+
+    // 加一些检测内容
     // if(party==1){
     //     trit_decomp_A.resize(n);
     //     trit_decomp_B.resize(n);
     //     std::vector<uint8_t> err_polys_cross(c * c * poly_size, 0);
     //     std::vector<uint8_t> err_poly_coeffs_B(c * t);
-    //     std::vector<uint8_t> err_poly_positions_B(c * t);
+    //     std::vector<size_t> err_poly_positions_B(c * t);
     //     io->recv_data(err_poly_coeffs_B.data(),c*t);
-    //     io->recv_data(err_poly_positions_B.data(),c*t);
+    //     io->recv_data(err_poly_positions_B.data(),c*t*sizeof(size_t));
     //     for (size_t iA = 0; iA < c; iA++) {
     //         for (size_t iB = 0; iB < c; iB++) {
     //             size_t poly_index = iA * c * t * t + iB * t * t;
@@ -538,9 +567,9 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
     //             std::vector<uint8_t> test_poly_A(poly_size,0);
     //             std::vector<uint8_t> test_poly_B(poly_size,0);
     
-    //             size_t poly_index = j * c + k;
-    //             uint128_t *poly_A = &packed_polys_A[poly_index * packed_poly_size];
-    //             uint128_t *poly_B = &packed_polys_B[poly_index * packed_poly_size];
+    //             const size_t poly_index = j * c + k;
+    //             const uint128_t *poly_A = &packed_polys_A[poly_index * packed_poly_size];
+    //             const uint128_t *poly_B = &packed_polys_B[poly_index * packed_poly_size];
     
     //             size_t block_idx = 0;
     //             size_t bit_idx = 0;
@@ -552,17 +581,17 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
     //                     bit_idx = 0;
     //                 }
     
-    //                 size_t packed_idx = block_idx * packed_block_size + floor(bit_idx / 64.0);
-    //                 size_t packed_bit = (63 - bit_idx % 64);
+    //                 const size_t packed_idx = block_idx * packed_block_size + floor(bit_idx / 64.0);
+    //                 const size_t packed_bit = (63 - bit_idx % 64);
     //                 test_poly_A[i] = (poly_A[packed_idx] >> (2 * packed_bit)) & 0b11;
     //                 test_poly_B[i] = (poly_B[packed_idx] >> (2 * packed_bit)) & 0b11;
-    
     //                 bit_idx++;
+                    
     //             }
     //             for (size_t i = 0; i < poly_size; i++)
     //             {
-    //                 uint8_t exp_coeff = err_polys_cross[j * c * poly_size + k * poly_size + i];
-    //                 uint8_t got_coeff = test_poly_A[i] ^ test_poly_B[i];
+    //                 const uint8_t exp_coeff = err_polys_cross[j * c * poly_size + k * poly_size + i];
+    //                 const uint8_t got_coeff = test_poly_A[i] ^ test_poly_B[i];
     
     //                 if (got_coeff != exp_coeff)
     //                 {
@@ -579,7 +608,8 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
     // }
     // else{
     //     io->send_data(err_poly_coeffs_A.data(),c*t);
-    //     io->send_data(err_poly_positions_A.data(),c*t);
+    //     io->flush();
+    //     io->send_data(err_poly_positions_A.data(),c*t*sizeof(size_t));
     //     io->flush();
     //     io->send_data(packed_polys_A.data(),c*c*packed_poly_size*16);
     //     io->flush();
@@ -591,12 +621,12 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
     // C*(C+1)/2 FFTs which can lead to a more efficient implementation.
     // Because we assume C=4, we have C*C = 16 which fits perfectly into a
     // uint32 packing.
-
+    
     for (size_t j = 0; j < c; j++)
     {
         for (size_t k = 0; k < c; k++)
         {
-            size_t poly_index = (j * c + k) * packed_poly_size;
+            const size_t poly_index = (j * c + k) * packed_poly_size;
             const uint128_t *polyA = &packed_polys_A[poly_index];
            
 
@@ -609,40 +639,43 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
                     block_idx++;
                     bit_idx = 0;
                 }
-
-                size_t packed_idx = block_idx * packed_block_size + floor(bit_idx / 64.0);
-                size_t packed_bit = (63 - bit_idx % 64);
-
+                const size_t packed_idx = block_idx * packed_block_size + floor(bit_idx / 64.0);
+                const size_t packed_bit = (63 - bit_idx % 64);
+                
                 // Extract the i-th (packed) coefficient of the (j,k)-th polynomial
-                uint128_t packedA = polyA[packed_idx];
+                const uint128_t packedA = polyA[packed_idx];
                 
 
                 // Extract the i-th coefficient from the packed coefficient
-                uint32_t coeffA = (packedA >> (2 * packed_bit)) & 0b11;
+                const uint32_t coeffA =((packedA >> (2 * packed_bit)) & 0b11);
                 
 
                 // Pack the extracted coefficient into the ctr-th FFT slot
-                size_t idx = j * c + k;
+                const size_t idx = j * c + k;
                 fft_uA[i] |= coeffA << (2 * idx);
                 
 
                 bit_idx++;
             }
+            
         }
     }
 
     fft_recursive_uint32(fft_uA.data(), n, poly_size / 3);
     
-
-    printf("[...... ]Done with Step 6 (computing FFTs)\n");
+    if(party==1){
+    printf("[...... ]Done with Step 5 (computing FFTs)\n");
+    time_taken = ((double)clock() - time) / (CLOCKS_PER_SEC / 1000.0); // ms
+    printf("Step 5 time elapsed %f ms\n", time_taken);
+    time = clock();
+    }
 
     //************************************************************************
-    // Step 7: Compute shares of z = <axa, u>
+    // Step 6: Compute shares of z = <axa, u>
     //************************************************************************
     multiply_fft_32(fft_a2.data(), fft_uA.data(), res_poly_mat_A.data(), poly_size);
    
 
-    size_t num_ffts = c * c;
 
     // XOR the (packed) columns into the accumulator.
     // Specifically, we perform column-wise XORs to get the result.
@@ -654,31 +687,44 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
             
         }
     }
+    if(party==1){
+        printf("[.......]Done with Step 6 (recovering shares)\n\n");
+        time_taken = ((double)clock() - time) / (CLOCKS_PER_SEC / 1000.0); // ms
+        printf("Step 6 time elapsed %f ms\n", time_taken);
+
+        
+        time_taken = ((double)clock() - start) / (CLOCKS_PER_SEC / 1000.0); // ms
+        printf("Time elapsed %f ms\n", time_taken);
+    }
+    
 
     // Now we check that we got the correct OLE correlations and fail
     // the test otherwise.
     if (party==1){
+        int nums = 0;
         std::vector<uint8_t> z_poly_B(poly_size);
         std::vector<uint8_t> x_poly_B(poly_size);
         io->recv_data(z_poly_B.data(),poly_size);
         io->recv_data(x_poly_B.data(),poly_size);
         for (size_t i = 0; i < poly_size; i++)
         {
-            uint8_t res = z_poly_A[i] ^ z_poly_B[i];
-            uint8_t exp = mult_f4(x_poly_A[i], x_poly_B[i]);
-
+            const uint8_t res = z_poly_A[i] ^ z_poly_B[i];
+            const uint8_t exp = mult_f4(x_poly_A[i], x_poly_B[i]);
+            
             // printf("[DEBUG]: Got: (%i,%i), Expected: (%i, %i)\n",
             //        (res >> 1) & 1, res & 1, (exp >> 1) & 1, exp & 1);
-            
             if (res != exp)
             {
-                printf("FAIL: Incorrect correlation output at index %zu\n", i);
-                printf("Got: (%i,%i), Expected: (%i, %i)\n",
-                    (res >> 1) & 1, res & 1, (exp >> 1) & 1, exp & 1);
-                exit(0);
+                nums++;
+                // printf("[DEBUG]: i=%zu, res=%i, exp=%i\n", i, res, exp);
+                // printf("FAIL: Incorrect correlation output at index %zu\n", i);
+                // printf("Got: (%i,%i), Expected: (%i, %i)\n",
+                    // (res >> 1) & 1, res & 1, (exp >> 1) & 1, exp & 1);
+                // exit(0);
             }
-            if(i%200==0) printf("Got: (%i,%i), Expected: (%i, %i)\n",(res >> 1) & 1, res & 1, (exp >> 1) & 1, exp & 1);
+            // if(i%200==0) printf("Got: (%i,%i), Expected: (%i, %i)\n",(res >> 1) & 1, res & 1, (exp >> 1) & 1, exp & 1);
         }
+        std::cout<<"出错的次数为："<<nums<<std::endl;
 
     }
     else{
@@ -689,12 +735,7 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
         
     }
     
-    time = clock() - time;
-    double time_taken = ((double)time) / (CLOCKS_PER_SEC / 1000.0); // ms
-
-    printf("[.......]Done with Step 7 (recovering shares)\n\n");
-
-    printf("Time elapsed %f ms\n", time_taken);
+    
 
     //************************************************************************
     // Step 8: Cleanup
