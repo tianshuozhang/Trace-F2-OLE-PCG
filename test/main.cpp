@@ -177,7 +177,7 @@ int main(int argc , char** argv){
         } else if (strcmp(argv[i], "--test_dpf")==0) {
             test_DPF(party,port,n,msg_len);
         }else if (strcmp(argv[i], "--test_F2")==0) {
-            test_pcg_F2(n,t,party,port);
+            Beaver_Triple_test(n,t,party,port);
         }
     }
 

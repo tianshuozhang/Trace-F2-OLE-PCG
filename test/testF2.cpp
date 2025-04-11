@@ -18,6 +18,13 @@ extern "C" {
 #include"testF4.h"
 #include"testF2.h"
 
+Beaver_Triple_Seed::Beaver_Triple_Seed(size_t t) {
+    err_poly_coeffs_A.resize(t);
+    err_poly_positions_A.resize(t);
+    s_poly_coeffs_A.resize(t);
+    s_poly_positions_A.resize(t);
+}
+
 void sample_a_and_tensor(uint8_t *fft_a, uint8_t *fft_a2, uint8_t *fft_a2a,size_t poly_size) {
     // RAND_bytes((uint8_t *)fft_a, sizeof(uint8_t) * poly_size);
 
@@ -38,7 +45,10 @@ void sample_a_and_tensor(uint8_t *fft_a, uint8_t *fft_a2, uint8_t *fft_a2a,size_
         
     printf("Done with sampling the public values\n");
 }
-void test_pcg_F2(const size_t n,const size_t t ,int party,int port){
+void test_pcg_F2(const size_t n,const size_t t ,int party,int port,
+     std::vector<uint8_t> &fft_a,std::vector<uint8_t>&fft_a2,std::vector<uint8_t>&fft_a2a,
+     Beaver_Triple_Seed &beaver_triple_seed,
+     std::vector<uint8_t> &z_poly_A,std::vector<uint8_t> &x_poly_A){
     clock_t time;
     time = clock();
     clock_t start = clock();
@@ -49,16 +59,9 @@ void test_pcg_F2(const size_t n,const size_t t ,int party,int port){
     // Step 0: Sample the global (1, a1 ... a_c-1) polynomials
     //************************************************************************
 
-    std::vector<uint8_t> fft_a(poly_size);
-    
-    std::vector<uint8_t>fft_a2(poly_size);
-
-    std::vector<uint8_t>fft_a2a(poly_size);
     NetIO* io = new NetIO(party == ALICE ? nullptr : "127.0.0.1", port);
-    
-    
-    if (party==1){
-        sample_a_and_tensor(fft_a.data(), fft_a2.data(), fft_a2a.data(), poly_size);
+    if(party==1){
+        
         io->send_data(fft_a.data(),poly_size);
         io->flush();
         io->send_data(fft_a2.data(),poly_size);
@@ -71,6 +74,13 @@ void test_pcg_F2(const size_t n,const size_t t ,int party,int port){
         io->recv_data(fft_a2.data(),poly_size);
         io->recv_data(fft_a2a.data(),poly_size);
     }
+
+    assert(fft_a.size() == poly_size);
+    assert(fft_a2.size() == poly_size);
+    assert(fft_a2a.size() == poly_size);
+
+    
+    
 
     //************************************************************************
     // Here, we figure out a good block size for the error vectors such that
@@ -102,22 +112,23 @@ void test_pcg_F2(const size_t n,const size_t t ,int party,int port){
 
     // coefficients associated with each error vector
     
-    std::vector<uint8_t> err_poly_coeffs_A(t);
+    auto err_poly_coeffs_A = beaver_triple_seed.err_poly_coeffs_A;
 
     // positions of the T errors in each error vector
    
-    std::vector<size_t> err_poly_positions_A(t);
+    
+    auto err_poly_positions_A = beaver_triple_seed.err_poly_positions_A;
 
     std::vector<uint8_t> s_polys_A(poly_size);
 
     // coefficients associated with each error vector
     
-    std::vector<uint8_t> s_poly_coeffs_A(t);
+    auto s_poly_coeffs_A = beaver_triple_seed.s_poly_coeffs_A;
 
     // positions of the T errors in each error vector
    
-    std::vector<size_t> s_poly_positions_A(t);
-
+    
+    auto s_poly_positions_A = beaver_triple_seed.s_poly_positions_A;
 
     std::vector<uint8_t> err_polys_A2(poly_size);
 
@@ -139,8 +150,8 @@ void test_pcg_F2(const size_t n,const size_t t ,int party,int port){
    
     std::vector<size_t> s_poly_positions_A2(t);
 
-    sample_local_err(n,t,block_size,err_polys_A,err_poly_coeffs_A, err_poly_positions_A);
-    sample_local_err(n,t,block_size,s_polys_A,s_poly_coeffs_A, s_poly_positions_A);
+    get_full_poly(n,t,block_size,err_polys_A,err_poly_coeffs_A, err_poly_positions_A);
+    get_full_poly(n,t,block_size,s_polys_A,s_poly_coeffs_A, s_poly_positions_A);
 
     if(party!=1){
         squre_poly(n,t,block_size,err_poly_coeffs_A,err_poly_positions_A,err_polys_A2,err_poly_coeffs_A2, err_poly_positions_A2);
@@ -189,7 +200,7 @@ void test_pcg_F2(const size_t n,const size_t t ,int party,int port){
 
     fft_recursive_uint8(fft_eA.data(), n, poly_size / 3);
 
-    std::vector<uint8_t> x_poly_A(poly_size,0);
+    
 
     // Compute the coordinate-wise multiplication over the packed FFT result
     
@@ -311,8 +322,6 @@ void test_pcg_F2(const size_t n,const size_t t ,int party,int port){
 
     // Allocate memory for the final inner product
     
-    std::vector<uint8_t> z_poly_A(poly_size,0);
-    // std::vector<uint32_t>res_poly_mat_A(poly_size);
     
     std::vector<std::vector<uint8_t>>res_poly_mat_A(8,std::vector<uint8_t>(poly_size, 0));
     
@@ -443,7 +452,7 @@ void test_pcg_F2(const size_t n,const size_t t ,int party,int port){
                     // (res >> 1) & 1, res & 1, (exp >> 1) & 1, exp & 1);
                 // exit(0);
             }
-            if(i%200==0) printf("Got: (%i,%i), Expected: (%i, %i)\n",z_poly_A[i] & 1, z_poly_B[i] & 1, x_poly_A[i] & 1, x_poly_B[i] & 1);
+            // if(i%200==0) printf("Got: (%i,%i), Expected: (%i, %i)\n",z_poly_A[i] & 1, z_poly_B[i] & 1, x_poly_A[i] & 1, x_poly_B[i] & 1);
         }
         std::cout<<"出错的次数为："<<nums<<std::endl;
 
@@ -459,38 +468,48 @@ void test_pcg_F2(const size_t n,const size_t t ,int party,int port){
     DestroyPRFKey(prf_keys);
 }
 
-void sample_local_err(const size_t n, const size_t t,const size_t block_size,std::vector<uint8_t> &err_polys_A,
+void get_full_poly(const size_t n, const size_t t,const size_t block_size,std::vector<uint8_t> &err_polys_A,
     std::vector<uint8_t> &err_poly_coeffs_A, std::vector<size_t> &err_poly_positions_A){
-
-    
     
     for (size_t j = 0; j < t; j++)
     {
         
-
         // random *non-zero* coefficients in F4
-        uint8_t a = rand_f4x();
-        
-        err_poly_coeffs_A[j] = a;
-        
-
+        uint8_t a = err_poly_coeffs_A[j];
         // random index within the block
-        size_t pos_A = random_index(block_size - 1);
-        
+        size_t pos_A =  err_poly_positions_A[j];
 
         if (pos_A >= block_size)
         {
             printf("FAIL: position > block_size: %zu\n", pos_A);
             exit(0);
         }
-
-        
-        err_poly_positions_A[j] = pos_A;
-        
-        
         // set the coefficient at the error position to the error value
         err_polys_A[j * block_size + pos_A] = a;
 
+    }
+}
+void sample_local_err(const size_t n, const size_t t,const size_t block_size,
+    std::vector<uint8_t> &err_poly_coeffs_A, std::vector<size_t> &err_poly_positions_A){
+    for (size_t j = 0; j < t; j++)
+    {
+        // random *non-zero* coefficients in F4
+       
+        
+        uint8_t a = rand_f4x();
+        
+        err_poly_coeffs_A[j] = a;
+
+        // random index within the block
+        size_t pos_A = random_index(block_size - 1);
+        
+        err_poly_positions_A[j] = pos_A; 
+
+        if (pos_A >= block_size)
+        {
+            printf("FAIL: position > block_size: %zu\n", pos_A);
+            exit(0);
+        }
         
     }
 }
@@ -547,3 +566,70 @@ void squre_poly(const size_t n, const size_t t,const size_t block_size,
         err_polys_A2[idx * block_size + pos_A] = a;
     }
 }
+
+void Beaver_Triple_test(const size_t n,const size_t t ,int party,int port)
+{
+    const size_t poly_size = ipow(3, n);
+    const size_t block_size = poly_size / t;
+    const size_t dpf_domain_bits = n-log_base(t,3);
+    Beaver_Triple_Seed beaver_triple_seed(t);
+    sample_local_err(n,t,block_size,
+        beaver_triple_seed.err_poly_coeffs_A,beaver_triple_seed.err_poly_positions_A);
+    sample_local_err(n,t,block_size,
+        beaver_triple_seed.s_poly_coeffs_A,beaver_triple_seed.s_poly_positions_A);
+    Beaver_Triple_Seed beaver_triple_seed2(t);
+    sample_local_err(n,t,block_size,
+        beaver_triple_seed2.err_poly_coeffs_A,beaver_triple_seed2.err_poly_positions_A);
+    sample_local_err(n,t,block_size,
+        beaver_triple_seed2.s_poly_coeffs_A,beaver_triple_seed2.s_poly_positions_A);
+    
+    std::vector<uint8_t> fft_a(poly_size);
+    std::vector<uint8_t> fft_a2(poly_size);
+    std::vector<uint8_t> fft_a2a(poly_size);
+    if(party==1)
+        sample_a_and_tensor(fft_a.data(), fft_a2.data(), fft_a2a.data(), poly_size);
+    std::vector<uint8_t> x_poly_A(poly_size,0);
+    std::vector<uint8_t> z_poly_A(poly_size,0);
+    std::vector<uint8_t> x_poly_A2(poly_size,0);
+    std::vector<uint8_t> z_poly_A2(poly_size,0);
+    test_pcg_F2(n,t,party,port,fft_a,fft_a2,fft_a2a,
+        beaver_triple_seed,z_poly_A,x_poly_A);
+    test_pcg_F2(n,t,party,port,fft_a,fft_a2,fft_a2a,
+        beaver_triple_seed2,z_poly_A2,x_poly_A2);
+    for(size_t w = 0 ; w < poly_size ;w++){
+        z_poly_A[w] = (z_poly_A[w]^z_poly_A2[w]^(x_poly_A2[w]&x_poly_A[w]))& 0b1;
+    }
+    NetIO* io = new NetIO(party == ALICE ? nullptr : "127.0.0.1", port);
+    if(party==1){
+        io->send_data(z_poly_A.data(),poly_size);
+        io->flush();
+        io->send_data(x_poly_A.data(),poly_size);
+        io->flush();
+        io->send_data(x_poly_A2.data(),poly_size);
+        io->flush();
+    }
+    else{
+        
+        std::vector<uint8_t> receive_x(poly_size);
+        std::vector<uint8_t> receive_z(poly_size);
+        std::vector<uint8_t> receive_x2(poly_size);
+        io->recv_data(receive_z.data(),poly_size);
+        io->recv_data(receive_x.data(),poly_size);
+        io->recv_data(receive_x2.data(),poly_size);
+        int nums = 0;
+        for(size_t w = 0 ; w < poly_size ;w++){
+            uint8_t res = (z_poly_A[w]^receive_z[w]);
+            uint8_t exp = (x_poly_A[w]^receive_x2[w])&(x_poly_A2[w]^receive_x[w]);
+            if(res!=exp){
+                nums++;
+                // printf("FAIL: Incorrect correlation output at index %zu\n", i);
+                // printf("Got: (%i,%i), Expected: (%i, %i)\n",
+                //        (res >> 1) & 1, res & 1, (exp >> 1) & 1, exp & 1);
+            }
+            
+        }
+        std::cout<<"出错的次数为："<<nums<<std::endl;
+    }
+    
+}
+
