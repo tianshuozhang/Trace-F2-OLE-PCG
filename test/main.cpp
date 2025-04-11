@@ -1,7 +1,7 @@
 #include"otdpf.h"
 #include"testF4.h"
 #include"bench.h"
-
+#include"testF2.h"
 void testOutputCorrectness(
     uint128_t *shares,
     size_t num_outputs,
@@ -172,12 +172,12 @@ int main(int argc , char** argv){
         if (strcmp(argv[i], "--bench") == 0) {
             bench_pcg(n,c,t,party,port);
         } 
-        else if (strcmp(argv[i], "--test") == 0) {
+        else if (strcmp(argv[i], "--test_F4") == 0) {
             test_pcg(n,c,t,party,port);
         } else if (strcmp(argv[i], "--test_dpf")==0) {
-            
-            
             test_DPF(party,port,n,msg_len);
+        }else if (strcmp(argv[i], "--test_F2")==0) {
+            test_pcg_F2(n,t,party,port);
         }
     }
 

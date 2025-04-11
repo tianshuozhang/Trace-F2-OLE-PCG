@@ -2,7 +2,7 @@ TARGET = ./bin/pcg
 CC = gcc
 CXX = g++
 CFLAGS += -std=c99 -O3 -I ../include -I../libs/tri-dpf/include -I/usr/include/openssl/
-LDFLAGS = -march=native -lcrypto -lssl -lm -maes -ffast-math
+LDFLAGS = -march=native -lcrypto -lssl -lm -maes -ffast-math -g
 
 # 源文件定义
 DPF_SRC = $(filter-out ../libs/tri-dpf/src/test.c, $(wildcard ../libs/tri-dpf/src/*.c))

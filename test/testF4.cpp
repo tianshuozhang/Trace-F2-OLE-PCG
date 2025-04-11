@@ -151,6 +151,23 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
     std::vector<uint8_t> res_poly_A(poly_size);
     multiply_fft_8(fft_a.data(), fft_eA.data(), res_poly_A.data(), poly_size); // a*eA
 
+    if(party==1){
+        std::vector<int> nums(c,0);
+        for (size_t j = 0; j < c; j++)
+        {
+            for (size_t i = 0; i < poly_size; i++)
+            {
+               if(((fft_eA[i] >> (2 * j)) & 0b11)!=0) 
+               {
+                    nums[j]++;
+               }
+            
+            }
+            std::cout<<nums[j]<<std::endl;
+        }
+    }
+    exit(0);
+
     // XOR the result into the accumulator.
     // Specifically, we XOR all the columns of the FFT result to get a
     // vector of size poly_size.
@@ -162,6 +179,7 @@ void test_pcg(const size_t n,const size_t c,const size_t t ,int party,int port)
            
         }
     }
+   
 
     if(party==1){
         printf("[..     ]Done with Step 2 (computing the local vectors)\n");
@@ -659,13 +677,16 @@ void Fullevaluation(std::vector<DPFParty> &dpf_party, const size_t c, const size
                 // each entry is of length packed_block_size
                 uint128_t *poly_blockA = &packed_polyA[k * packed_block_size];
                 std::vector<uint128_t> totalsharesA(block_size,0);
-                std::vector<uint128_t> totalsharesB(block_size);
+                
                 for (size_t l = 0; l < t; l++) {
                     size_t index = i * c * t * t + j * t * t + k * t + l;
                     auto dpf = dpf_party[index];
                     std::vector<uint128_t> shares_A;
                     dpf.fulldomainevaluation(shares_A);
-                    assert(shares_A.size() == totalsharesB.size());
+                    
+                    assert(shares_A.size() == totalsharesA.size());
+
+                    
                     for(size_t w = 0; w < shares_A.size(); w++) {
                         totalsharesA[w] ^= shares_A[w];
                     }
